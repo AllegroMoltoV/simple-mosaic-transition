@@ -137,19 +137,98 @@ void with_scene(Checker &c, const std::string &name, const TransitionSpec &spec,
 	obs_source_release(s.a);
 }
 
-// t に固定して描き、画像を保存する。失敗したときは false
-bool draw_at(Checker &c, Scene &s, float t, const std::string &name, Image &out, enum gs_color_space space = GS_CS_SRGB)
+// transition を t に固定して描き、画像を保存する。失敗したときは false
+bool draw_with(Checker &c, obs_source_t *transition, Scene &s, float t, const std::string &name, Image &out,
+	       enum gs_color_space space = GS_CS_SRGB)
 {
-	if (!set_time(s.transition, s.a, s.b, t)) {
+	if (!set_time(transition, s.a, s.b, t)) {
 		c.expect(false, name + ": failed to fix the transition time");
 		return false;
 	}
-	if (!render(s.transition, out, space)) {
+	if (!render(transition, out, space)) {
 		c.expect(false, name + ": failed to render the transition");
 		return false;
 	}
 	save_image(name, out);
 	return true;
+}
+
+bool draw_at(Checker &c, Scene &s, float t, const std::string &name, Image &out, enum gs_color_space space = GS_CS_SRGB)
+{
+	return draw_with(c, s.transition, s, t, name, out, space);
+}
+
+// 暗転部分の長さの境界値の検査。切り替えの位置 50% で、前半の進み具合 u または後半の進み具合 v の位置で描き、
+// 暗転部分の長さ 0% で同じ t に描いた出力と比べる
+enum class DarkExpect {
+	Same,    // 暗転していない。0% と ±1 以内
+	Half,    // 暗転の割合がちょうど 0.5。0% の RGB の半分と ±2 以内で、不透明
+	Black,   // 不透明な黒
+	MosaicB, // 黒にならず、次のシーンの最も粗いモザイク
+};
+
+struct DarkCase {
+	int window;     // 暗転部分の長さ (%)。範囲外の値は 0 から 100 に丸められる
+	bool second;    // 後半なら true
+	float progress; // 前半の u、または後半の v
+	DarkExpect expect;
+};
+
+// 暗転部分の長さ w に対し、暗転は前半の u が 1 - w から 1 の区間、後半の v が 0 から w の区間にかかり、
+// 区間の中央で割合が 0.5 になる
+const DarkCase dark_cases[] = {
+	// 0%: 暗転しない。切り替えの位置でも黒にならない
+	{0, false, 0.999f, DarkExpect::Same},
+	{0, true, 0.0f, DarkExpect::MosaicB},
+	// 1%: 最も短い暗転。区間の直前と直後は暗転せず、区間の中央で半分、切り替えの位置で黒
+	{1, false, 0.98f, DarkExpect::Same},
+	{1, false, 0.995f, DarkExpect::Half},
+	{1, true, 0.0f, DarkExpect::Black},
+	{1, true, 0.005f, DarkExpect::Half},
+	{1, true, 0.02f, DarkExpect::Same},
+	// 50%: 既定値
+	{50, false, 0.4f, DarkExpect::Same},
+	{50, false, 0.75f, DarkExpect::Half},
+	{50, true, 0.0f, DarkExpect::Black},
+	{50, true, 0.25f, DarkExpect::Half},
+	{50, true, 0.6f, DarkExpect::Same},
+	// 99%: 区間の始まりの直前はまだ暗転しない
+	{99, false, 0.008f, DarkExpect::Same},
+	{99, false, 0.505f, DarkExpect::Half},
+	{99, true, 0.0f, DarkExpect::Black},
+	{99, true, 0.495f, DarkExpect::Half},
+	{99, true, 0.992f, DarkExpect::Same},
+	// 100%: 前半と後半の全体で暗転する。それでも始まりと終わりで画面が跳ねない
+	{100, false, 0.0f, DarkExpect::Same},
+	{100, false, 0.5f, DarkExpect::Half},
+	{100, true, 0.0f, DarkExpect::Black},
+	{100, true, 0.5f, DarkExpect::Half},
+	{100, true, 0.998f, DarkExpect::Same},
+	// 範囲外: 保存された設定を手で書き換えた値は、0% と 100% として扱う
+	{-1, true, 0.0f, DarkExpect::MosaicB},
+	{101, false, 0.5f, DarkExpect::Half},
+};
+
+// out が、暗転していない出力 plain を半分の明るさにした不透明な画像であることを検査する
+void check_half(Checker &c, const Image &plain, const Image &out, const std::string &what)
+{
+	if (!same_size(c, plain, out)) {
+		return;
+	}
+	for (uint32_t y = 0; y < out.height; ++y) {
+		for (uint32_t x = 0; x < out.width; ++x) {
+			const uint8_t *o = out.at(x, y);
+			const uint8_t *p = plain.at(x, y);
+			for (int ch = 0; ch < 3; ++ch) {
+				const double expected = p[ch] * 0.5;
+				c.expect(std::abs(o[ch] - expected) <= 2.0,
+					 what + ": pixel " + at(x, y) + " channel " + std::to_string(ch) + " is " +
+						 std::to_string(o[ch]) + " (expected about " +
+						 std::to_string(expected) + ")");
+			}
+			c.expect(o[3] >= 254, what + ": pixel " + at(x, y) + " is not opaque");
+		}
+	}
 }
 
 struct Scenario {
@@ -178,7 +257,7 @@ const Scenario scenarios[] = {
 			 }
 		 });
 	 }},
-	// 暗転の長さが 0% より大きいとき、切り替えの位置で全体が不透明な黒になる
+	// 暗転部分の長さが 0% より大きいとき、切り替えの位置で全体が不透明な黒になる
 	{"black-at-switch",
 	 [](Checker &c) {
 		 with_scene(c, "black-at-switch", {50, kMaxCell, 50}, kCanvasWidth, kCanvasHeight,
@@ -189,37 +268,46 @@ const Scenario scenarios[] = {
 				    }
 			    });
 	 }},
-	// 暗転の長さが 50% のとき、暗転は前半の後ろ半分と後半の前半分にだけかかり、それ以外ではモザイクを元の明るさで見せる。
-	// 切り替えの位置 50% で、t = 0.2 と 0.8 は暗転の長さ 0% と同じ出力、t = 0.4 はそれより暗い出力になる
+	// 暗転部分の長さの境界値 (0%・1%・50%・99%・100% と範囲外) で、暗転がかかる区間と割合が式どおりになる。
+	// 暗転部分の長さ 0% の出力 (s.transition) を基準にする
 	{"dark-window",
 	 [](Checker &c) {
-		 const float times[] = {0.2f, 0.4f, 0.8f};
-		 Image plain[3];
-		 Image dark[3];
-		 for (const bool fade : {false, true}) {
-			 Image *images = fade ? dark : plain;
-			 with_scene(c, fade ? "dark-window-fade" : "dark-window-plain", {fade ? 50 : 0, kMaxCell, 50},
-				    kCanvasWidth, kCanvasHeight, [&](Checker &c, Scene &s) {
-					    for (int i = 0; i < 3; ++i) {
-						    const std::string name = std::string(fade ? "dark-window-fade-"
-											      : "dark-window-plain-") +
-									     std::to_string(i);
-						    draw_at(c, s, times[i], name, images[i]);
-					    }
-				    });
-		 }
-		 check_equal(c, plain[0], dark[0], "t=0.2 before the fade starts");
-		 check_equal(c, plain[2], dark[2], "t=0.8 after the fade ends");
-		 const auto brightness = [](const Image &image) {
-			 double sum = 0.0;
-			 for (size_t i = 0; i < image.rgba.size(); i += 4) {
-				 sum += image.rgba[i] + image.rgba[i + 1] + image.rgba[i + 2];
+		 with_scene(c, "dark-window", {0, kMaxCell, 50}, kCanvasWidth, kCanvasHeight, [](Checker &c, Scene &s) {
+			 for (const DarkCase &dc : dark_cases) {
+				 const float t = dc.second ? 0.5f + dc.progress * 0.5f : dc.progress * 0.5f;
+				 const std::string what = "dark " + std::to_string(dc.window) + "%, " +
+							  (dc.second ? "v=" : "u=") + std::to_string(dc.progress);
+				 const std::string name = "dark-window-" + std::to_string(dc.window) +
+							  (dc.second ? "-v" : "-u") +
+							  std::to_string(static_cast<int>(dc.progress * 1000.0f));
+				 obs_source_t *transition = create_transition(
+					 {dc.window, static_cast<int>(kMaxCell), 50}, kCanvasWidth, kCanvasHeight);
+				 Image plain;
+				 Image out;
+				 if (!transition) {
+					 c.expect(false, what + ": failed to create the transition");
+				 } else if (draw_with(c, s.transition, s, t, name + "-plain", plain) &&
+					    draw_with(c, transition, s, t, name, out)) {
+					 switch (dc.expect) {
+					 case DarkExpect::Same:
+						 check_equal(c, plain, out, what);
+						 break;
+					 case DarkExpect::Half:
+						 check_half(c, plain, out, what);
+						 break;
+					 case DarkExpect::Black:
+						 check_black(c, out, what);
+						 break;
+					 case DarkExpect::MosaicB:
+						 check_mosaic(c, s.ref_b, out, kMaxCell, what);
+						 break;
+					 }
+				 }
+				 obs_source_release(transition);
 			 }
-			 return sum;
-		 };
-		 c.expect(brightness(dark[1]) < brightness(plain[1]) * 0.5, "t=0.4 is not darkened by the fade");
+		 });
 	 }},
-	// 暗転の長さが 0% のとき、切り替えの位置の直前は A、直後は B の最も粗いモザイクになる。
+	// 暗転部分の長さが 0% のとき、切り替えの位置の直前は A、直後は B の最も粗いモザイクになる。
 	// 切り替えの位置を既定と異なる 30% にし、設定の読み込みもあわせて確かめる
 	{"swap-around-switch",
 	 [](Checker &c) {
@@ -276,7 +364,7 @@ const Scenario scenarios[] = {
 			 },
 			 GS_CS_709_EXTENDED);
 	 }},
-	// 目視の確認用の連番画像。暗転の長さ 50% と 0% を、既定の最大の粗さで 1/30 刻みに描く
+	// 目視の確認用の連番画像。暗転部分の長さ 50% と 0% を、既定の最大の粗さで 1/30 刻みに描く
 	{"sequence",
 	 [](Checker &c) {
 		 for (const bool fade : {true, false}) {
