@@ -189,6 +189,36 @@ const Scenario scenarios[] = {
 				    }
 			    });
 	 }},
+	// 黒を経由するとき、暗転は前半の後ろ半分と後半の前半分にだけかかり、それ以外ではモザイクを元の明るさで見せる。
+	// 切り替えの位置 50% で、t = 0.2 と 0.8 は黒を経由しないときと同じ出力、t = 0.4 はそれより暗い出力になる
+	{"dark-window",
+	 [](Checker &c) {
+		 const float times[] = {0.2f, 0.4f, 0.8f};
+		 Image plain[3];
+		 Image dark[3];
+		 for (const bool fade : {false, true}) {
+			 Image *images = fade ? dark : plain;
+			 with_scene(c, fade ? "dark-window-fade" : "dark-window-plain", {fade, kMaxCell, 50},
+				    kCanvasWidth, kCanvasHeight, [&](Checker &c, Scene &s) {
+					    for (int i = 0; i < 3; ++i) {
+						    const std::string name = std::string(fade ? "dark-window-fade-"
+											      : "dark-window-plain-") +
+									     std::to_string(i);
+						    draw_at(c, s, times[i], name, images[i]);
+					    }
+				    });
+		 }
+		 check_equal(c, plain[0], dark[0], "t=0.2 before the fade starts");
+		 check_equal(c, plain[2], dark[2], "t=0.8 after the fade ends");
+		 const auto brightness = [](const Image &image) {
+			 double sum = 0.0;
+			 for (size_t i = 0; i < image.rgba.size(); i += 4) {
+				 sum += image.rgba[i] + image.rgba[i + 1] + image.rgba[i + 2];
+			 }
+			 return sum;
+		 };
+		 c.expect(brightness(dark[1]) < brightness(plain[1]) * 0.5, "t=0.4 is not darkened by the fade");
+	 }},
 	// 黒を経由しないとき、切り替えの位置の直前は A、直後は B の最も粗いモザイクになる。
 	// 切り替えの位置を既定と異なる 30% にし、設定の読み込みもあわせて確かめる
 	{"swap-around-switch",

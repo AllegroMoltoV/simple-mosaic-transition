@@ -17,7 +17,7 @@ on:
 permissions:
   contents: read
 env:
-  SCENARIOS: t0 near-end black-at-switch swap-around-switch switch-point-edges non-srgb
+  SCENARIOS: t0 near-end black-at-switch dark-window swap-around-switch switch-point-edges non-srgb
   BENCH_CELL_SIZES: 8 64 256
 jobs:
   windows-render:

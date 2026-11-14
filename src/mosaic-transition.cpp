@@ -1,6 +1,7 @@
 // モザイクが粗くなって次のシーンへ切り替わるトランジション。
 // 切り替えの位置より前は前のシーン a のマスを 1 px から最大の粗さへ大きくし、後は次のシーン b のマスを最大の粗さから 1 px へ
-// 小さくする。黒へのフェードを使うときは、粗くなるのと同時に黒へ近づき、切り替えの位置で不透明な黒になる。
+// 小さくする。黒へのフェードを使うときは、前半の後ろ半分で黒へ近づいて切り替えの位置で不透明な黒になり、後半の前半分で
+// 黒から戻る。モザイクが粗くなり始める様子と、細かく戻っていく様子を、暗転に隠さず見せるため。
 // 色空間と音声の扱いは、OBS 標準の「色へフェード」(plugins/obs-transitions/transition-fade-to-color.c) にならう。
 
 #include <obs-module.h>
@@ -22,14 +23,16 @@ constexpr int kMinMaxCellSize = 8;
 constexpr int kMaxMaxCellSize = 256;
 constexpr int kDefaultMaxCellSize = 64;
 constexpr int kDefaultSwitchPoint = 50;
+// 黒へのフェードに使う、前半と後半それぞれの区間に対する割合。前半では区間の終わりの、後半では区間の始めのこの割合で
+// 黒へ近づき、また戻る。依頼者が試作の連番画像を見比べて決めた値で、設定画面には出さない
+constexpr float kDarkWindow = 0.5f;
 
 float clamp01(float x)
 {
 	return std::clamp(x, 0.0f, 1.0f);
 }
 
-// 区間 [lo, hi] での smoothstep。区間の幅が 0 のときは、hi を境に 0 か 1 を返す。
-// 切り替えの位置が 0% か 100% のとき、片側の区間が無くなっても 0 で割らないため
+// 区間 [lo, hi] での smoothstep。区間の幅が 0 のときは、0 で割らずに hi を境に 0 か 1 を返す
 float smoothstep(float lo, float hi, float x)
 {
 	if (hi <= lo) {
@@ -48,14 +51,19 @@ float lerp(float a, float b, float x)
 struct Frame {
 	bool use_b;   // 次のシーンを描く
 	float coarse; // 粗さの度合い。0 で元の映像、1 で最大の粗さ
+	float dark;   // 黒へのフェードを使うときに、不透明な黒へ近づける割合
 };
 
 Frame frame_at(float t, float switch_point)
 {
 	if (t < switch_point) {
-		return {false, smoothstep(0.0f, switch_point, t)};
+		// 前半の進み具合。t < switch_point のため switch_point は 0 より大きい
+		const float u = t / switch_point;
+		return {false, smoothstep(0.0f, 1.0f, u), smoothstep(1.0f - kDarkWindow, 1.0f, u)};
 	}
-	return {true, 1.0f - smoothstep(switch_point, 1.0f, t)};
+	// 後半の進み具合。切り替えの位置が 100% なら後半の区間は無く、切り替えの瞬間として扱う
+	const float v = switch_point < 1.0f ? (t - switch_point) / (1.0f - switch_point) : 0.0f;
+	return {true, 1.0f - smoothstep(0.0f, 1.0f, v), 1.0f - smoothstep(0.0f, kDarkWindow, v)};
 }
 
 class MosaicTransition {
@@ -127,7 +135,7 @@ public:
 		}
 		const int cell = std::max(
 			1, static_cast<int>(std::lround(lerp(1.0f, static_cast<float>(max_cell_size_), frame.coarse))));
-		const float black = fade_to_black_ ? frame.coarse : 0.0f;
+		const float black = fade_to_black_ ? frame.dark : 0.0f;
 
 		const auto cells_x = static_cast<uint32_t>((cx + cell - 1) / cell);
 		const auto cells_y = static_cast<uint32_t>((cy + cell - 1) / cell);

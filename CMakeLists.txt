@@ -92,6 +92,7 @@ if(WIN32)
     t0
     near-end
     black-at-switch
+    dark-window
     swap-around-switch
     switch-point-edges
     non-srgb
