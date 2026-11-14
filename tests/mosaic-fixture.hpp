@@ -154,6 +154,11 @@ inline obs_source_t *create_transition(const TransitionSpec &spec, uint32_t widt
 
 inline bool wait_frames(uint64_t count);
 
+// 始まりとして描く進み具合。t = 0 にしない。新しい libobs (33.0.1 で確認) は、手動のトランジションの時刻を 0 にすると
+// トランジションを取り消し、プラグインを通さずに前のシーンを描く (libobs/obs-source-transition.c:402-404)。
+// 31.1.1 にはこの処理が無い。版によらずプラグインの描画を通すため、0 に十分近い正の値にする
+constexpr float kStartTime = 0.001f;
+
 // a から b への手動のトランジションを始め、進み具合を t に固定する。
 // t >= 1 で一度描くと libobs はトランジションを終えたものとして扱い、以後プラグインの描画を呼ばない。
 // そのため呼ぶたびに a だけの状態から始め直す。手動の時刻は次の tick で反映されるため、2 フレーム待ってから確かめる

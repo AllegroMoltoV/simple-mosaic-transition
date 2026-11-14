@@ -199,7 +199,7 @@ const DarkCase dark_cases[] = {
 	{99, true, 0.495f, DarkExpect::Half},
 	{99, true, 0.992f, DarkExpect::Same},
 	// 100%: 前半と後半の全体で暗転する。それでも始まりと終わりで画面が跳ねない
-	{100, false, 0.0f, DarkExpect::Same},
+	{100, false, 2.0f * kStartTime, DarkExpect::Same},
 	{100, false, 0.5f, DarkExpect::Half},
 	{100, true, 0.0f, DarkExpect::Black},
 	{100, true, 0.5f, DarkExpect::Half},
@@ -242,8 +242,8 @@ const Scenario scenarios[] = {
 	 [](Checker &c) {
 		 with_scene(c, "t0", {}, kCanvasWidth, kCanvasHeight, [](Checker &c, Scene &s) {
 			 Image out;
-			 if (draw_at(c, s, 0.0f, "t0", out)) {
-				 check_equal(c, s.ref_a, out, "t=0");
+			 if (draw_at(c, s, kStartTime, "t0", out)) {
+				 check_equal(c, s.ref_a, out, "t=start");
 			 }
 		 });
 	 }},
@@ -330,8 +330,8 @@ const Scenario scenarios[] = {
 		 with_scene(c, "switch-point-0", {0, kMaxCell, 0}, kCanvasWidth, kCanvasHeight,
 			    [](Checker &c, Scene &s) {
 				    Image out;
-				    if (draw_at(c, s, 0.0f, "switch-point-0-start", out)) {
-					    check_mosaic(c, s.ref_b, out, kMaxCell, "switch point 0%, t=0");
+				    if (draw_at(c, s, kStartTime, "switch-point-0-start", out)) {
+					    check_mosaic(c, s.ref_b, out, kMaxCell, "switch point 0%, t=start");
 				    }
 				    if (draw_at(c, s, 0.999f, "switch-point-0-end", out)) {
 					    check_equal(c, s.ref_b, out, "switch point 0%, t=0.999");
@@ -340,8 +340,8 @@ const Scenario scenarios[] = {
 		 with_scene(c, "switch-point-100", {50, kMaxCell, 100}, kCanvasWidth, kCanvasHeight,
 			    [](Checker &c, Scene &s) {
 				    Image out;
-				    if (draw_at(c, s, 0.0f, "switch-point-100-start", out)) {
-					    check_equal(c, s.ref_a, out, "switch point 100%, t=0");
+				    if (draw_at(c, s, kStartTime, "switch-point-100-start", out)) {
+					    check_equal(c, s.ref_a, out, "switch point 100%, t=start");
 				    }
 				    if (draw_at(c, s, 0.999999f, "switch-point-100-end", out)) {
 					    check_black(c, out, "switch point 100%, t=0.999999");
@@ -355,8 +355,8 @@ const Scenario scenarios[] = {
 			 c, "non-srgb", {50, kMaxCell, 50}, kCanvasWidth, kCanvasHeight,
 			 [](Checker &c, Scene &s) {
 				 Image out;
-				 if (draw_at(c, s, 0.0f, "non-srgb-t0", out, GS_CS_709_EXTENDED)) {
-					 check_equal(c, s.ref_a, out, "non-srgb t=0");
+				 if (draw_at(c, s, kStartTime, "non-srgb-t0", out, GS_CS_709_EXTENDED)) {
+					 check_equal(c, s.ref_a, out, "non-srgb t=start");
 				 }
 				 if (draw_at(c, s, 0.5f, "non-srgb-switch", out, GS_CS_709_EXTENDED)) {
 					 check_black(c, out, "non-srgb t=switch point");

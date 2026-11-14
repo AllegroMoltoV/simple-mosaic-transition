@@ -1,5 +1,5 @@
 // モザイクのトランジションの 1 フレームあたりの GPU 時間を、1920x1080 の最も粗い瞬間で測るベンチマーク。
-// 計測は gs_timer (タイムスタンプのクエリ) で行う。同じトランジションの t = 0 (マスが 1 px で、モザイクの 2 パスを描かない) を
+// 計測は gs_timer (タイムスタンプのクエリ) で行う。同じトランジションの始まり (マスが 1 px で、モザイクの 2 パスを描かない) を
 // 基準とし、その差をモザイクの時間とする。前後のシーンの描き直しは tick の時刻に左右されるため、ソースを単独で描いた時間は基準にしない。
 // 使い方: benchmark <プラグイン> <プラグインの data> <描画モジュール> <libobs の data> <最大の粗さ>...
 // 環境で値が変わるため CTest には登録しない。
@@ -128,7 +128,7 @@ int main(int argc, char **argv)
 		obs_source_t *transition = create_transition({0, std::atoi(argv[i]), 50}, kWidth, kHeight);
 		double baseline = -1.0;
 		double frame = -1.0;
-		if (transition && set_time(transition, a, b, 0.0f)) {
+		if (transition && set_time(transition, a, b, kStartTime)) {
 			baseline = median_of_repeats(transition);
 			if (set_time(transition, a, b, 0.5001f)) {
 				frame = median_of_repeats(transition);
