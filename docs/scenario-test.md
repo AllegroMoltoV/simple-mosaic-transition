@@ -7,16 +7,17 @@
 ## 方針
 
 - 画素や数値で判定できるシナリオは、obs-websocket 経由のスクリプト `tests/scenario/scenario.py` で操作して判定します。依存は `tests/scenario/requirements.txt` にあり、リポジトリの `.venv` に入れます。
-- obs-websocket には、トランジションを追加する要求と、ソースの表示と非表示のトランジションを設定する要求がありません。この 2 つは依頼者に GUI で操作してもらいます。
-- 見た目の好みや使い心地のように数値で判定できない事項は、依頼者に GUI で操作して確かめてもらいます。
-- 依頼者の既存のシーンと設定を変えないよう、テスト専用のシーンコレクション `smt-scenario-test` とプロファイル `smt-scenario-test` を作って使います。終了時には、元のシーンコレクションとプロファイルへ戻します。
-- obs-websocket のパスワードは、スクリプトが実行時に `%APPDATA%\obs-studio\plugin_config\obs-websocket\config.json` から読みます。ファイルや出力には残しません。
+- 自動のシナリオは、OBS Studio のポータブル版で人の手を借りずに行います。依頼者が普段使う OBS Studio の設定・シーン・`%PROGRAMDATA%` のプラグインには触れません。
+- obs-websocket にはトランジションを追加する要求がありません。OBS Studio を終了した状態で、テスト専用のシーンコレクションの JSON に足して代えます。
+- obs-websocket には、ソースの表示と非表示のトランジションを設定する要求もありません。この確認 (S7) と、見た目の好みや使い心地のように数値で判定できない事項は、依頼者に GUI で操作して確かめてもらいます。
+- スクリプトは、テスト専用のシーンコレクション `smt-scenario-test` とプロファイル `smt-scenario-test` を作って使い、終了時に元のものへ戻します。
+- obs-websocket のパスワードは、スクリプトが実行時に OBS Studio の設定ファイルから読みます。ファイルや出力には残しません。ポータブル版のパスワードは、準備のスクリプトがこのテスト用に乱数で作ります。
 
 ## 前提条件
 
-- ほかのセッションが OBS Studio を使っていないことを、依頼者が確かめています。
-- ビルドした Windows 版を `%PROGRAMDATA%\obs-studio\plugins\simple-mosaic-transition\` に導入しています。
-- 確認時点の OBS Studio は 33.0.1 で、obs-websocket のサーバーは有効です。
+- OBS Studio 33.0.1 のポータブル版 (`OBS-Studio-33.0.1-Windows-x64.zip`) を、新しい空のフォルダーに展開しています。
+- `cmake --install build_x64 --config RelWithDebInfo --prefix <書き出し先>` で、製品フォルダーを書き出しています。
+- ほかの OBS Studio が起動していません。
 
 ## テスト用のシーン
 
@@ -32,19 +33,26 @@ scene-a には、表示と非表示のトランジションの確認に使う白
 
 ## 実行の手順
 
-1. スクリプトを `run` で実行します。初回は、テスト専用のシーンコレクションにこのトランジションが無いため、終了コード 3 で止まります。
-2. 依頼者に、シーントランジションの + ボタンからこのトランジションを追加してもらいます。
-3. `run` を再び実行します。前提の確認、自動で判定するシナリオ、ログの検査を順に行います。
-4. S5 で開いた 3 つのプロジェクターのウィンドウを、依頼者に閉じてもらいます。
-5. S8 は、`s8-prepare` を実行し、依頼者に OBS Studio をメニューから終了して起動し直してもらい、`s8-verify` を実行します。
+次の順に実行します。すべて PowerShell で、リポジトリのルートで行います。`<展開先>` はポータブル版を展開したフォルダー、`<出力先>` は撮影した画像と録画と判定の結果の JSON を残すフォルダーです。出力先は、毎回同じフォルダーを使います。テスト専用のシーンの画像ソースが、初回の出力先の画像を指したまま残るためです。
+
+1. `tests/scenario/setup-portable.ps1` で、ポータブル版を準備します。ポータブルモードの指定、初回起動の自動構成ウィザードの抑止、obs-websocket の有効化、製品フォルダーの導入を行います。
+2. `tests/scenario/start-obs.ps1` で起動します。前回の異常終了の目印が残っているときは、Safe Mode の画面が開くのを避けるため起動しません。
+3. 環境変数 `OBS_CONFIG_ROOT` に `<展開先>\config\obs-studio` を設定し、`scenario.py run` を実行します。初回は、テスト専用のシーンコレクションにこのトランジションが無いため、終了コード 3 で止まります。
+4. `tests/scenario/stop-obs.ps1` で OBS Studio を終了し、`tests/scenario/add-transition.ps1` でトランジションを足します。
+5. 起動し直して `scenario.py run` を再び実行します。前提の確認、自動で判定するシナリオ、ログの検査を順に行います。
+6. S8 は、`scenario.py s8-prepare`、`stop-obs.ps1`、`start-obs.ps1`、`scenario.py s8-verify` の順に実行します。
+7. `stop-obs.ps1` で OBS Studio を終了します。S5 で開いたプロジェクターは独立したウィンドウのため、`stop-obs.ps1` はプロセスが終わるまで終了の要求を繰り返します。
 
 ```text
+pwsh tests/scenario/setup-portable.ps1 -PortableRoot <展開先> -ProductDir <書き出し先>\simple-mosaic-transition
+pwsh tests/scenario/start-obs.ps1 -PortableRoot <展開先> -PidFile <PID のファイル>
+$env:OBS_CONFIG_ROOT = "<展開先>\config\obs-studio"
 .venv/Scripts/python -X utf8 tests/scenario/scenario.py run <出力先>
+pwsh tests/scenario/stop-obs.ps1 -ProcessId (Get-Content <PID のファイル>)
+pwsh tests/scenario/add-transition.ps1 -ScenesDir <展開先>\config\obs-studio\basic\scenes -Jq <jq.exe のパス>
 .venv/Scripts/python -X utf8 tests/scenario/scenario.py s8-prepare <出力先>
 .venv/Scripts/python -X utf8 tests/scenario/scenario.py s8-verify <出力先>
 ```
-
-撮影した画像、録画、判定の結果の JSON は、出力先に残ります。
 
 ## 最初に確かめる前提
 
@@ -52,7 +60,7 @@ scene-a には、表示と非表示のトランジションの確認に使う白
 
 | 前提 | 確かめ方 |
 | --- | --- |
-| P1: スタジオモードで `SetTBarPosition` に `release: false` を渡すと、T バーを任意の位置で止められる | 0.5 で止めて 1 秒待ち、2 回の撮影結果が一致すること |
+| P1: スタジオモードで `SetTBarPosition` に `release: false` を渡すと、T バーを任意の位置で止められる | 0.45 で止めて 1 秒待ち、2 回の撮影結果が一致すること。OBS Studio はトランジションの最中に T バーの操作を受け付けない (`frontend/widgets/OBSBasic_Transitions.cpp:338-344`)。そのため、プログラムは通常のモードで切り替え、トランジションが終わってからスタジオモードに入る |
 | P2: `TriggerHotkeyByName` の `OBSBasic.Screenshot` で、トランジション中のプログラム出力を撮影できる | P1 の状態で撮影し、scene-a と異なり、scene-a のモザイクに近い画像が保存されること。保存先は、プロファイルの録画の保存先 (OBS 33.0.1 の `frontend/utility/ScreenshotObj.cpp:213-224`) |
 
 ## 自動で判定するシナリオ
@@ -65,7 +73,7 @@ scene-a には、表示と非表示のトランジションの確認に使う白
 | S2 | スタジオモードで T バーをゆっくり動かし、途中で戻す | T バーを 0.25、0.45、0.5、0.75 の順に止め、0.25 に戻してから離す。止めるたびに撮影する | 0.25 と 0.45 では scene-a のモザイクで、0.45 のほうがマスが大きい。0.5 はほぼ黒。0.75 は scene-b のモザイク。戻した 0.25 は、最初の 0.25 と一致する |
 | S3 | 暗転部分の長さを 0% にして切り替える | `SetCurrentSceneTransitionSettings` で暗転部分の長さを 0% にし、T バーを 0.49 と 0.51 に止めて撮影する | 0.49 は scene-a、0.51 は scene-b のモザイク。マスの大きさが同じで、黒のフレームが無い |
 | S4 | トランジションの途中で、別のシーンをクリックする | S1 の切り替えの途中、400 ms の時点で scene-c へ切り替える | OBS Studio が応答を続け、最後のプログラムが scene-c になる |
-| S5 | プロジェクターやマルチビューを開いたまま切り替える | プログラム、プレビュー、マルチビューのプロジェクターをウィンドウで開き、S2 の 0.25 と 0.5 を撮影する | S2 の同じ位置の画像と一致する。1 フレームに複数回描かれても、モザイクが欠けない |
+| S5 | プロジェクターやマルチビューを開いたまま切り替える | プログラム、プレビュー、マルチビューのプロジェクターをウィンドウで開いて落ち着かせ、S2 の 0.25 と 0.5 を撮影する。プロジェクターは obs-websocket から閉じられないため、最後に行う | S2 の同じ位置の画像と一致する。1 フレームに複数回描かれても、モザイクが欠けない。描画のスキップは、プロジェクターを開いたあとから数える |
 | S6 | 特定のシーンだけでこのトランジションを使う | 既定のトランジションをフェードにし、scene-b のトランジションの上書きを、このトランジションの期間 1,500 ms にする。scene-a から scene-b、scene-b から scene-a の順に切り替えて録画する | scene-b への切り替えにだけ、ほぼ黒のフレームがある |
 | S8 | 設定を変えて OBS Studio を再起動する | 暗転部分の長さを 30%、最大の粗さを 128 px、切り替えの位置を 40% にして OBS Studio を終了し、起動し直す | `GetCurrentSceneTransition` が返す設定が、変更後の値と一致する |
 | S9 | 配信中に切り替えを繰り返す | scene-a と scene-b の切り替えを 50 回繰り返す | `GetStats` の描画のスキップのフレーム数の増分が 0。メモリの使用量の増分が 50 MB 未満 |
@@ -73,7 +81,7 @@ scene-a には、表示と非表示のトランジションの確認に使う白
 
 ## 依頼者に GUI で確かめてもらう事項
 
-自動の判定が終わったあと、依頼者に次の流れで操作してもらいます。操作の手順は、フェーズ 2 の開始時に、この節を基に別の文書として渡します。
+自動の判定が終わったあと、依頼者に、普段使う OBS Studio で次の流れで操作してもらいます。操作の手順は、この節を基に [user-test.md](user-test.md) として渡します。
 
 1. シーンのトランジションの一覧からこのトランジションを選び、プロパティの画面を開く。
 2. 暗転部分の長さを既定値の 50% と 0% に変えて、シーンを切り替える。
@@ -93,4 +101,4 @@ scene-a には、表示と非表示のトランジションの確認に使う白
 
 ## 後始末
 
-終了時に、元のシーンコレクションとプロファイルへ戻し、OBS Studio を終了します。そのあと依頼者に終了を知らせます。テスト専用のシーンコレクションとプロファイルは残します。obs-websocket にはシーンコレクションを削除する要求が無いため、削除する場合は依頼者に GUI で行ってもらいます。
+スクリプトは終了時に、元のシーンコレクションとプロファイルへ戻します。テスト専用のシーンコレクションとプロファイルは、ポータブル版の設定のフォルダーに残ります。ポータブル版は展開先のフォルダーごと消せます。

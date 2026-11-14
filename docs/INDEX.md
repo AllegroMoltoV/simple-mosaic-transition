@@ -11,6 +11,9 @@ context compaction で文脈が失われた場合は、この索引から必要�
 | 依頼者への質問 (未決事項 U1〜U6) | `.prompts/QUESTIONS.md` |
 | OBS Studio の実機でのシナリオテストの設計 (フェーズ 2) | `docs/scenario-test.md` |
 | 描画の統合テストの結果と 1920×1080 の GPU 時間 | `docs/logs/2026-11-15-render-tests-and-gpu-time.md` |
+| OBS Studio の実機でのシナリオテストの結果 | `docs/reports/2026111502-obs-scenario-test.md` |
+| 依頼者へのユーザーテストの依頼 | `docs/user-test.md` |
+| ロゴの生成 | `docs/images/generate-logos.py` |
 | 実行ログ (生の出力。git 追跡対象外) | `.logs/` |
 | 実行ログ (残す価値があると判断したもの) | `docs/logs/` |
 | 計画と決定事項 (Beads 使用時の正本) | `bd show <親課題>` |

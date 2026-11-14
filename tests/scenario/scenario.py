@@ -3,10 +3,15 @@
 設計は docs/scenario-test.md にある。obs-websocket で OBS Studio を操作し、スクリーンショット・録画・統計の値で判定する。
 依頼者の既存のシーンと設定を変えないよう、テスト専用のシーンコレクションとプロファイルに切り替えて行い、終了時に元へ戻す。
 
+ポータブル版の OBS Studio で行うときは、tests/scenario/setup-portable.ps1 で準備し、環境変数 OBS_CONFIG_ROOT に
+<展開先>\\config\\obs-studio を渡す。
+
 使い方 (リポジトリのルートで実行する):
     .venv/Scripts/python -X utf8 tests/scenario/scenario.py run <出力先>
     .venv/Scripts/python -X utf8 tests/scenario/scenario.py s8-prepare <出力先>
-    (依頼者が OBS Studio を終了して起動し直す)
+    (tests/scenario/stop-obs.ps1 と start-obs.ps1 で OBS Studio を起動し直す)
+
+手順の全体は docs/scenario-test.md にある。
     .venv/Scripts/python -X utf8 tests/scenario/scenario.py s8-verify <出力先>
 
 終了コードは、合格が 0、不合格が 1、前提の不成立や準備の失敗が 2、トランジションの追加が必要なときが 3。
@@ -36,8 +41,10 @@ BLACK_LUMA = 10.0
 SAME_IMAGE = 2.0
 SIGNATURE_SIZE = (16, 9)
 DEFAULT_SETTINGS = {"dark_window": 50, "max_cell_size": 64, "switch_point": 50}
-CONFIG = Path(os.environ["APPDATA"]) / "obs-studio" / "plugin_config" / "obs-websocket" / "config.json"
-LOG_DIR = Path(os.environ["APPDATA"]) / "obs-studio" / "logs"
+# OBS Studio の設定のフォルダー。ポータブル版では、環境変数 OBS_CONFIG_ROOT に <展開先>\config\obs-studio を渡す
+CONFIG_ROOT = Path(os.environ.get("OBS_CONFIG_ROOT", Path(os.environ["APPDATA"]) / "obs-studio"))
+CONFIG = CONFIG_ROOT / "plugin_config" / "obs-websocket" / "config.json"
+LOG_DIR = CONFIG_ROOT / "logs"
 PLUGIN_ERROR = "[mosaic-transition]"
 
 
@@ -168,6 +175,28 @@ class Session:
             time.sleep(0.1)
         raise PreconditionError(f"screenshot '{name}' was not saved within 10 seconds")
 
+    def wait_transition_end(self, timeout: float = 10.0) -> None:
+        """前のトランジションが終わるまで待つ。OBS Studio はトランジションの最中に T バーの操作を受け付けない
+        (OBS 33.0.1 frontend/widgets/OBSBasic_Transitions.cpp:338-344)。OBS Studio と同じく、進み具合が 0 と 1 の間に
+        あるときだけトランジションの最中とみなす。手動のトランジションを取り消したあとは 0 が返る"""
+        def ended() -> bool:
+            cursor = self.send("GetCurrentSceneTransitionCursor")["transitionCursor"]
+            return not 0.0 < cursor < 1.0
+
+        wait_until(ended, "the previous transition to end", timeout)
+
+    def prepare_tbar(self) -> None:
+        """プログラムを scene-a、プレビューを scene-b にしたスタジオモードにする。
+        スタジオモードの中でプログラムを切り替えるとトランジションが走り、その最中の T バーの操作は無視されるため、
+        プログラムは通常のモードで切り替え、トランジションが終わってからスタジオモードに入る"""
+        self.program("scene-a")
+        self.wait_transition_end()
+        time.sleep(0.5)
+        self.studio(True)
+        self.send("SetCurrentPreviewScene", {"sceneName": "scene-b"})
+        time.sleep(0.5)
+        self.wait_transition_end()
+
     def tbar(self, position: float, wait: float = 0.8) -> None:
         self.send("SetTBarPosition", {"position": position, "release": False})
         time.sleep(wait)
@@ -175,13 +204,11 @@ class Session:
     def tbar_reset(self) -> None:
         self.send("SetTBarPosition", {"position": 0.0, "release": True})
         time.sleep(0.5)
+        self.wait_transition_end()
 
     def tbar_shots(self, prefix: str, positions: list[float]) -> dict[float, Image.Image]:
         """スタジオモードでプログラムを scene-a、プレビューを scene-b にし、T バーを止めるたびに撮影する"""
-        self.studio(True)
-        self.program("scene-a")
-        self.send("SetCurrentPreviewScene", {"sceneName": "scene-b"})
-        time.sleep(0.5)
+        self.prepare_tbar()
         shots = {}
         for i, position in enumerate(positions):
             self.tbar(position)
@@ -222,15 +249,27 @@ def connect(out: Path) -> Session:
     return Session(client=client, out=out)
 
 
+def wait_until(condition, what: str, timeout: float = 15.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if condition():
+            return
+        time.sleep(0.3)
+    raise PreconditionError(f"{what} did not become current within {timeout:.0f} seconds")
+
+
 def setup(session: Session) -> None:
     """テスト専用のプロファイルとシーンコレクションへ切り替え、シーンを用意する"""
     session.original_collection = session.send("GetSceneCollectionList")["currentSceneCollectionName"]
     profiles = session.send("GetProfileList")
     session.original_profile = profiles["currentProfileName"]
     session.original_studio = session.send("GetStudioModeEnabled")["studioModeEnabled"]
-    if PROFILE not in profiles["profiles"]:
+    # Create* は作ったものへ切り替えるが、一覧への反映は UI のスレッドで後から行われる。切り替わるまで待つ
+    if PROFILE in profiles["profiles"]:
+        session.send("SetCurrentProfile", {"profileName": PROFILE})
+    else:
         session.send("CreateProfile", {"profileName": PROFILE})
-    session.send("SetCurrentProfile", {"profileName": PROFILE})
+    wait_until(lambda: session.send("GetProfileList")["currentProfileName"] == PROFILE, f"profile {PROFILE}")
     capture_dir = session.out / "capture"
     capture_dir.mkdir(parents=True, exist_ok=True)
     for category, name, value in (
@@ -240,10 +279,13 @@ def setup(session: Session) -> None:
     ):
         session.send("SetProfileParameter", {"parameterCategory": category, "parameterName": name, "parameterValue": value})
     set_canvas(session, WIDTH, HEIGHT)
-    if COLLECTION not in session.send("GetSceneCollectionList")["sceneCollections"]:
+    if COLLECTION in session.send("GetSceneCollectionList")["sceneCollections"]:
+        session.send("SetCurrentSceneCollection", {"sceneCollectionName": COLLECTION})
+    else:
         session.send("CreateSceneCollection", {"sceneCollectionName": COLLECTION})
-    session.send("SetCurrentSceneCollection", {"sceneCollectionName": COLLECTION})
-    time.sleep(2.0)
+    wait_until(lambda: session.send("GetSceneCollectionList")["currentSceneCollectionName"] == COLLECTION,
+               f"scene collection {COLLECTION}")
+    time.sleep(1.0)
     assets = make_assets(session.out / "assets")
     existing = {s["sceneName"] for s in session.send("GetSceneList")["scenes"]}
     inputs = {i["inputName"] for i in session.send("GetInputList")["inputs"]}
@@ -334,9 +376,7 @@ def references(session: Session) -> tuple[Image.Image, Image.Image]:
 def preconditions(session: Session, ref_a: Image.Image, ref_b: Image.Image) -> None:
     """P1: T バーを止められる。P2: トランジション中のプログラム出力を撮影できる"""
     session.use_transition({**DEFAULT_SETTINGS, "dark_window": 0})
-    session.studio(True)
-    session.program("scene-a")
-    session.send("SetCurrentPreviewScene", {"sceneName": "scene-b"})
+    session.prepare_tbar()
     session.tbar(0.45, wait=1.0)
     first = session.screenshot("p1-first")
     time.sleep(1.0)
@@ -400,16 +440,20 @@ def s4(check: Check, ref_a, ref_b) -> None:
     check.expect(bool(s.send("GetVersion")), "OBS Studio stopped responding")
 
 
+def open_projectors(session: Session) -> None:
+    """プログラム・プレビュー・マルチビューのプロジェクターを開く。ウィンドウを開く間はフレームが落ちることがあるため、
+    S5 の統計の基準を取る前に開いて落ち着かせる"""
+    for mix in ("PROGRAM", "PREVIEW", "MULTIVIEW"):
+        session.send("OpenVideoMixProjector", {"videoMixType": f"OBS_WEBSOCKET_VIDEO_MIX_TYPE_{mix}"})
+    time.sleep(3.0)
+
+
 def s5(check: Check, ref_a, ref_b, s2_shots: dict) -> None:
     s = check.session
-    for mix in ("PROGRAM", "PREVIEW", "MULTIVIEW"):
-        s.send("OpenVideoMixProjector", {"videoMixType": f"OBS_WEBSOCKET_VIDEO_MIX_TYPE_{mix}"})
-    time.sleep(1.0)
     s.use_transition(DEFAULT_SETTINGS)
     shots = s.tbar_shots("s5", [0.25, 0.5])
     check.expect(diff_mean(shots[0], s2_shots[0.25]) <= SAME_IMAGE, "0.25 differs from S2 with projectors open")
     check.expect(diff_mean(shots[1], s2_shots[0.5]) <= SAME_IMAGE, "0.5 differs from S2 with projectors open")
-    check.notes["projectors"] = "close the three projector windows by hand"
 
 
 def s6(check: Check, ref_a, ref_b) -> None:
@@ -480,11 +524,15 @@ def command_run(session: Session) -> int:
     run_scenario(session, "S2", lambda c: s2_shots.update(s2(c, ref_a, ref_b)))
     run_scenario(session, "S3", lambda c: s3(c, ref_a, ref_b))
     run_scenario(session, "S4", lambda c: s4(c, ref_a, ref_b))
-    if s2_shots:
-        run_scenario(session, "S5", lambda c: s5(c, ref_a, ref_b, s2_shots))
     run_scenario(session, "S6", lambda c: s6(c, ref_a, ref_b))
     run_scenario(session, "S9", lambda c: s9(c, ref_a, ref_b))
     run_scenario(session, "S10", lambda c: s10(c, ref_a, ref_b))
+    # プロジェクターは obs-websocket から閉じられず、開いたままだと以降の描画の負荷が増えるため、最後に行う
+    if s2_shots:
+        before = session.stats()["renderSkippedFrames"]
+        open_projectors(session)
+        print(f"opening projectors skipped {session.stats()['renderSkippedFrames'] - before} frame(s)")
+        run_scenario(session, "S5", lambda c: s5(c, ref_a, ref_b, s2_shots))
     errors = plugin_errors()
     session.results.append({"scenario": "log", "passed": not errors, "failures": errors, "notes": {}})
     print(f"{'PASS' if not errors else 'FAIL'} log" + "".join(f"\n  - {e}" for e in errors))
@@ -494,7 +542,7 @@ def command_run(session: Session) -> int:
 
 def command_s8_prepare(session: Session) -> int:
     session.use_transition(S8_SETTINGS)
-    print("S8 prepared. Quit OBS Studio from its menu, start it again, then run s8-verify.")
+    print("S8 prepared. Restart OBS Studio with stop-obs.ps1 and start-obs.ps1, then run s8-verify.")
     return 0
 
 
@@ -524,8 +572,8 @@ def main() -> int:
         setup(session)
         code = COMMANDS[sys.argv[1]](session)
     except TransitionMissing:
-        print("The transition is not in the scene collection 'smt-scenario-test'. Add it with the + button under "
-              "Scene Transitions in OBS Studio, then run this command again.", file=sys.stderr)
+        print("The transition is not in the scene collection 'smt-scenario-test'. Quit OBS Studio with stop-obs.ps1, "
+              "add it with add-transition.ps1, start OBS Studio again, then run this command again.", file=sys.stderr)
         code = 3
     except PreconditionError as error:
         print(f"precondition failed: {error}", file=sys.stderr)
