@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+<rect width="512" height="512" rx="96" fill="#f2efe8"/>
+<rect x="64" y="64" width="64" height="64" fill="#f25330"/>
+<rect x="64" y="128" width="64" height="64" fill="#deac2c"/>
+<rect x="64" y="192" width="64" height="64" fill="#c97f28"/>
+<rect x="64" y="256" width="64" height="64" fill="#b55824"/>
+<rect x="64" y="320" width="64" height="64" fill="#a13720"/>
+<rect x="64" y="384" width="64" height="64" fill="#8c6d1c"/>
+<rect x="128" y="64" width="64" height="64" fill="#f2bc30"/>
+<rect x="128" y="128" width="64" height="64" fill="#de8c2c"/>
+<rect x="128" y="192" width="64" height="64" fill="#c96228"/>
+<rect x="128" y="256" width="64" height="64" fill="#b53e24"/>
+<rect x="128" y="320" width="64" height="64" fill="#a17d20"/>
+<rect x="128" y="384" width="64" height="64" fill="#8c591c"/>
+<rect x="192" y="64" width="64" height="64" fill="#f29930"/>
+<rect x="192" y="128" width="64" height="64" fill="#de6c2c"/>
+<rect x="192" y="192" width="64" height="64" fill="#c94528"/>
+<rect x="192" y="256" width="64" height="64" fill="#b58c24"/>
+<rect x="192" y="320" width="64" height="64" fill="#a16620"/>
+<rect x="192" y="384" width="64" height="64" fill="#8c441c"/>
+<rect x="256" y="64" width="64" height="64" fill="#4964f2"/>
+<rect x="256" y="128" width="64" height="64" fill="#4393de"/>
+<rect x="256" y="192" width="64" height="64" fill="#3c53c9"/>
+<rect x="256" y="256" width="64" height="64" fill="#3678b5"/>
+<rect x="256" y="320" width="64" height="64" fill="#3042a1"/>
+<rect x="256" y="384" width="64" height="64" fill="#2a5d8c"/>
+<rect x="320" y="64" width="64" height="64" fill="#49bff2"/>
+<rect x="320" y="128" width="64" height="64" fill="#4377de"/>
+<rect x="320" y="192" width="64" height="64" fill="#3c9fc9"/>
+<rect x="320" y="256" width="64" height="64" fill="#3661b5"/>
+<rect x="320" y="320" width="64" height="64" fill="#307fa1"/>
+<rect x="320" y="384" width="64" height="64" fill="#2a4b8c"/>
+<rect x="384" y="64" width="64" height="64" fill="#49a1f2"/>
+<rect x="384" y="128" width="64" height="64" fill="#435bde"/>
+<rect x="384" y="192" width="64" height="64" fill="#3c86c9"/>
+<rect x="384" y="256" width="64" height="64" fill="#364bb5"/>
+<rect x="384" y="320" width="64" height="64" fill="#306ba1"/>
+<rect x="384" y="384" width="64" height="64" fill="#2a3a8c"/>
+<rect x="240" y="64" width="32" height="384" fill="#0c0c10"/>
+</svg>
