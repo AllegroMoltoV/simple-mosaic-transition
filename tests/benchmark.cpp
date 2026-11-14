@@ -124,8 +124,8 @@ int main(int argc, char **argv)
 	std::cout << std::fixed << std::setprecision(3);
 	std::cout << "max_cell_size,width,height,frame_ms,baseline_ms,mosaic_ms\n";
 	for (int i = 5; i < argc; ++i) {
-		// 黒へのフェードは描く手順を変えないため、外して測る。切り替えの位置の直後で最も粗くなる
-		obs_source_t *transition = create_transition({false, std::atoi(argv[i]), 50}, kWidth, kHeight);
+		// 暗転は描く手順を変えないため、暗転の長さを 0% にして測る。切り替えの位置の直後で最も粗くなる
+		obs_source_t *transition = create_transition({0, std::atoi(argv[i]), 50}, kWidth, kHeight);
 		double baseline = -1.0;
 		double frame = -1.0;
 		if (transition && set_time(transition, a, b, 0.0f)) {

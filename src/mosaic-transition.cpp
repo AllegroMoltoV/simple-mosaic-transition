@@ -1,7 +1,8 @@
 // モザイクが粗くなって次のシーンへ切り替わるトランジション。
 // 切り替えの位置より前は前のシーン a のマスを 1 px から最大の粗さへ大きくし、後は次のシーン b のマスを最大の粗さから 1 px へ
-// 小さくする。黒へのフェードを使うときは、前半の後ろ半分で黒へ近づいて切り替えの位置で不透明な黒になり、後半の前半分で
-// 黒から戻る。モザイクが粗くなり始める様子と、細かく戻っていく様子を、暗転に隠さず見せるため。
+// 小さくする。暗転の長さが 0% より大きいときは、前半の終わりのその割合で黒へ近づいて切り替えの位置で不透明な黒になり、
+// 後半の始めのその割合で黒から戻る。暗転を前半と後半の一部に限るのは、モザイクが粗くなり始める様子と細かく戻っていく
+// 様子を暗転に隠さず見せるため。0% では暗転せず、同じ粗さのモザイクのまま次のシーンへ替わる。
 // 色空間と音声の扱いは、OBS 標準の「色へフェード」(plugins/obs-transitions/transition-fade-to-color.c) にならう。
 
 #include <obs-module.h>
@@ -15,7 +16,7 @@
 
 namespace {
 
-constexpr const char *kFadeToBlack = "fade_to_black";
+constexpr const char *kDarkWindow = "dark_window";
 constexpr const char *kMaxCellSize = "max_cell_size";
 constexpr const char *kSwitchPoint = "switch_point";
 
@@ -23,9 +24,8 @@ constexpr int kMinMaxCellSize = 8;
 constexpr int kMaxMaxCellSize = 256;
 constexpr int kDefaultMaxCellSize = 64;
 constexpr int kDefaultSwitchPoint = 50;
-// 黒へのフェードに使う、前半と後半それぞれの区間に対する割合。前半では区間の終わりの、後半では区間の始めのこの割合で
-// 黒へ近づき、また戻る。依頼者が試作の連番画像を見比べて決めた値で、設定画面には出さない
-constexpr float kDarkWindow = 0.5f;
+// 暗転の長さの既定値。依頼者が試作の連番画像を見比べて決めた値
+constexpr int kDefaultDarkWindow = 50;
 
 float clamp01(float x)
 {
@@ -51,19 +51,21 @@ float lerp(float a, float b, float x)
 struct Frame {
 	bool use_b;   // 次のシーンを描く
 	float coarse; // 粗さの度合い。0 で元の映像、1 で最大の粗さ
-	float dark;   // 黒へのフェードを使うときに、不透明な黒へ近づける割合
+	float dark;   // 不透明な黒へ近づける割合
 };
 
-Frame frame_at(float t, float switch_point)
+// dark_window は、前半と後半それぞれの区間に対する暗転の長さの割合。0 なら smoothstep の区間の幅が 0 になり、
+// 前半の u < 1 と後半の v >= 0 では暗転の割合が常に 0 になる
+Frame frame_at(float t, float switch_point, float dark_window)
 {
 	if (t < switch_point) {
 		// 前半の進み具合。t < switch_point のため switch_point は 0 より大きい
 		const float u = t / switch_point;
-		return {false, smoothstep(0.0f, 1.0f, u), smoothstep(1.0f - kDarkWindow, 1.0f, u)};
+		return {false, smoothstep(0.0f, 1.0f, u), smoothstep(1.0f - dark_window, 1.0f, u)};
 	}
 	// 後半の進み具合。切り替えの位置が 100% なら後半の区間は無く、切り替えの瞬間として扱う
 	const float v = switch_point < 1.0f ? (t - switch_point) / (1.0f - switch_point) : 0.0f;
-	return {true, 1.0f - smoothstep(0.0f, 1.0f, v), 1.0f - smoothstep(0.0f, kDarkWindow, v)};
+	return {true, 1.0f - smoothstep(0.0f, 1.0f, v), 1.0f - smoothstep(0.0f, dark_window, v)};
 }
 
 class MosaicTransition {
@@ -109,7 +111,9 @@ public:
 	// トランジションの update は、設定画面などの呼び出し元のスレッドで呼ばれ、描画スレッドと並行する。そのため値は atomic で持つ
 	void Update(obs_data_t *settings)
 	{
-		fade_to_black_ = obs_data_get_bool(settings, kFadeToBlack);
+		dark_window_ =
+			static_cast<float>(std::clamp<long long>(obs_data_get_int(settings, kDarkWindow), 0, 100)) /
+			100.0f;
 		max_cell_size_ = static_cast<int>(std::clamp<long long>(obs_data_get_int(settings, kMaxCellSize),
 									kMinMaxCellSize, kMaxMaxCellSize));
 		switch_point_ =
@@ -128,14 +132,14 @@ public:
 	{
 		// 色空間は最初に読む。texrender を begin すると、その texrender の色空間に切り替わるため
 		const bool nonlinear = gs_get_color_space() == GS_CS_SRGB;
-		const Frame frame = frame_at(t, switch_point_);
+		const Frame frame = frame_at(t, switch_point_, dark_window_);
 		gs_texture_t *tex = frame.use_b ? b : a;
 		if (!Ready() || !tex) {
 			return;
 		}
 		const int cell = std::max(
 			1, static_cast<int>(std::lround(lerp(1.0f, static_cast<float>(max_cell_size_), frame.coarse))));
-		const float black = fade_to_black_ ? frame.dark : 0.0f;
+		const float black = frame.dark;
 
 		const auto cells_x = static_cast<uint32_t>((cx + cell - 1) / cell);
 		const auto cells_y = static_cast<uint32_t>((cy + cell - 1) / cell);
@@ -270,7 +274,7 @@ public:
 
 	static void Defaults(obs_data_t *settings)
 	{
-		obs_data_set_default_bool(settings, kFadeToBlack, true);
+		obs_data_set_default_int(settings, kDarkWindow, kDefaultDarkWindow);
 		obs_data_set_default_int(settings, kMaxCellSize, kDefaultMaxCellSize);
 		obs_data_set_default_int(settings, kSwitchPoint, kDefaultSwitchPoint);
 	}
@@ -278,7 +282,10 @@ public:
 	static obs_properties_t *Properties(void *)
 	{
 		obs_properties_t *props = obs_properties_create();
-		obs_properties_add_bool(props, kFadeToBlack, obs_module_text("FadeToBlack"));
+		obs_property_t *dark =
+			obs_properties_add_int_slider(props, kDarkWindow, obs_module_text("DarkWindow"), 0, 100, 1);
+		obs_property_int_set_suffix(dark, "%");
+		obs_property_set_long_description(dark, obs_module_text("DarkWindow.Description"));
 		obs_property_t *cell = obs_properties_add_int_slider(
 			props, kMaxCellSize, obs_module_text("MaxCellSize"), kMinMaxCellSize, kMaxMaxCellSize, 1);
 		obs_property_int_set_suffix(cell, " px");
@@ -320,7 +327,7 @@ private:
 	gs_texrender_t *rows_render_ = nullptr;
 	gs_texrender_t *cells_render_ = nullptr;
 
-	std::atomic<bool> fade_to_black_ = true;
+	std::atomic<float> dark_window_ = kDefaultDarkWindow / 100.0f;
 	std::atomic<int> max_cell_size_ = kDefaultMaxCellSize;
 	std::atomic<float> switch_point_ = kDefaultSwitchPoint / 100.0f;
 };

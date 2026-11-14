@@ -178,10 +178,10 @@ const Scenario scenarios[] = {
 			 }
 		 });
 	 }},
-	// 黒を経由するとき、切り替えの位置で全体が不透明な黒になる
+	// 暗転の長さが 0% より大きいとき、切り替えの位置で全体が不透明な黒になる
 	{"black-at-switch",
 	 [](Checker &c) {
-		 with_scene(c, "black-at-switch", {true, kMaxCell, 50}, kCanvasWidth, kCanvasHeight,
+		 with_scene(c, "black-at-switch", {50, kMaxCell, 50}, kCanvasWidth, kCanvasHeight,
 			    [](Checker &c, Scene &s) {
 				    Image out;
 				    if (draw_at(c, s, 0.5f, "black-at-switch", out)) {
@@ -189,8 +189,8 @@ const Scenario scenarios[] = {
 				    }
 			    });
 	 }},
-	// 黒を経由するとき、暗転は前半の後ろ半分と後半の前半分にだけかかり、それ以外ではモザイクを元の明るさで見せる。
-	// 切り替えの位置 50% で、t = 0.2 と 0.8 は黒を経由しないときと同じ出力、t = 0.4 はそれより暗い出力になる
+	// 暗転の長さが 50% のとき、暗転は前半の後ろ半分と後半の前半分にだけかかり、それ以外ではモザイクを元の明るさで見せる。
+	// 切り替えの位置 50% で、t = 0.2 と 0.8 は暗転の長さ 0% と同じ出力、t = 0.4 はそれより暗い出力になる
 	{"dark-window",
 	 [](Checker &c) {
 		 const float times[] = {0.2f, 0.4f, 0.8f};
@@ -198,7 +198,7 @@ const Scenario scenarios[] = {
 		 Image dark[3];
 		 for (const bool fade : {false, true}) {
 			 Image *images = fade ? dark : plain;
-			 with_scene(c, fade ? "dark-window-fade" : "dark-window-plain", {fade, kMaxCell, 50},
+			 with_scene(c, fade ? "dark-window-fade" : "dark-window-plain", {fade ? 50 : 0, kMaxCell, 50},
 				    kCanvasWidth, kCanvasHeight, [&](Checker &c, Scene &s) {
 					    for (int i = 0; i < 3; ++i) {
 						    const std::string name = std::string(fade ? "dark-window-fade-"
@@ -219,11 +219,11 @@ const Scenario scenarios[] = {
 		 };
 		 c.expect(brightness(dark[1]) < brightness(plain[1]) * 0.5, "t=0.4 is not darkened by the fade");
 	 }},
-	// 黒を経由しないとき、切り替えの位置の直前は A、直後は B の最も粗いモザイクになる。
+	// 暗転の長さが 0% のとき、切り替えの位置の直前は A、直後は B の最も粗いモザイクになる。
 	// 切り替えの位置を既定と異なる 30% にし、設定の読み込みもあわせて確かめる
 	{"swap-around-switch",
 	 [](Checker &c) {
-		 with_scene(c, "swap-around-switch", {false, kMaxCell, 30}, kCanvasWidth, kCanvasHeight,
+		 with_scene(c, "swap-around-switch", {0, kMaxCell, 30}, kCanvasWidth, kCanvasHeight,
 			    [](Checker &c, Scene &s) {
 				    Image before;
 				    if (draw_at(c, s, 0.29f, "swap-around-switch-before", before)) {
@@ -239,7 +239,7 @@ const Scenario scenarios[] = {
 	// 0% では B の最も粗いモザイクから戻るだけ、100% では A が最も粗いモザイクになるだけになる
 	{"switch-point-edges",
 	 [](Checker &c) {
-		 with_scene(c, "switch-point-0", {false, kMaxCell, 0}, kCanvasWidth, kCanvasHeight,
+		 with_scene(c, "switch-point-0", {0, kMaxCell, 0}, kCanvasWidth, kCanvasHeight,
 			    [](Checker &c, Scene &s) {
 				    Image out;
 				    if (draw_at(c, s, 0.0f, "switch-point-0-start", out)) {
@@ -249,7 +249,7 @@ const Scenario scenarios[] = {
 					    check_equal(c, s.ref_b, out, "switch point 0%, t=0.999");
 				    }
 			    });
-		 with_scene(c, "switch-point-100", {true, kMaxCell, 100}, kCanvasWidth, kCanvasHeight,
+		 with_scene(c, "switch-point-100", {50, kMaxCell, 100}, kCanvasWidth, kCanvasHeight,
 			    [](Checker &c, Scene &s) {
 				    Image out;
 				    if (draw_at(c, s, 0.0f, "switch-point-100-start", out)) {
@@ -264,7 +264,7 @@ const Scenario scenarios[] = {
 	{"non-srgb",
 	 [](Checker &c) {
 		 with_scene(
-			 c, "non-srgb", {true, kMaxCell, 50}, kCanvasWidth, kCanvasHeight,
+			 c, "non-srgb", {50, kMaxCell, 50}, kCanvasWidth, kCanvasHeight,
 			 [](Checker &c, Scene &s) {
 				 Image out;
 				 if (draw_at(c, s, 0.0f, "non-srgb-t0", out, GS_CS_709_EXTENDED)) {
@@ -276,12 +276,12 @@ const Scenario scenarios[] = {
 			 },
 			 GS_CS_709_EXTENDED);
 	 }},
-	// 目視の確認用の連番画像。黒を経由するパターンと経由しないパターンを、既定の最大の粗さで 1/30 刻みに描く
+	// 目視の確認用の連番画像。暗転の長さ 50% と 0% を、既定の最大の粗さで 1/30 刻みに描く
 	{"sequence",
 	 [](Checker &c) {
 		 for (const bool fade : {true, false}) {
 			 const std::string prefix = fade ? "seq-black" : "seq-direct";
-			 with_scene(c, prefix, {fade, 64, 50}, 640, 360, [&prefix](Checker &c, Scene &s) {
+			 with_scene(c, prefix, {fade ? 50 : 0, 64, 50}, 640, 360, [&prefix](Checker &c, Scene &s) {
 				 for (int i = 0; i < 30; ++i) {
 					 char name[64];
 					 std::snprintf(name, sizeof(name), "%s-%02d", prefix.c_str(), i);

@@ -132,7 +132,7 @@ inline obs_source_t *create_test_source(const SourceSpec &spec, const char *name
 
 // トランジションの設定
 struct TransitionSpec {
-	bool fade_to_black = true;
+	int dark_window = 50;
 	int max_cell_size = 16;
 	int switch_point = 50;
 };
@@ -141,7 +141,7 @@ struct TransitionSpec {
 inline obs_source_t *create_transition(const TransitionSpec &spec, uint32_t width, uint32_t height)
 {
 	obs_data_t *settings = obs_data_create();
-	obs_data_set_bool(settings, "fade_to_black", spec.fade_to_black);
+	obs_data_set_int(settings, "dark_window", spec.dark_window);
 	obs_data_set_int(settings, "max_cell_size", spec.max_cell_size);
 	obs_data_set_int(settings, "switch_point", spec.switch_point);
 	obs_source_t *transition = obs_source_create(kTransitionId, "transition", settings, nullptr);

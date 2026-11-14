@@ -35,7 +35,7 @@ WIDTH, HEIGHT = 1920, 1080
 BLACK_LUMA = 10.0
 SAME_IMAGE = 2.0
 SIGNATURE_SIZE = (16, 9)
-DEFAULT_SETTINGS = {"fade_to_black": True, "max_cell_size": 64, "switch_point": 50}
+DEFAULT_SETTINGS = {"dark_window": 50, "max_cell_size": 64, "switch_point": 50}
 CONFIG = Path(os.environ["APPDATA"]) / "obs-studio" / "plugin_config" / "obs-websocket" / "config.json"
 LOG_DIR = Path(os.environ["APPDATA"]) / "obs-studio" / "logs"
 PLUGIN_ERROR = "[mosaic-transition]"
@@ -333,7 +333,7 @@ def references(session: Session) -> tuple[Image.Image, Image.Image]:
 
 def preconditions(session: Session, ref_a: Image.Image, ref_b: Image.Image) -> None:
     """P1: T バーを止められる。P2: トランジション中のプログラム出力を撮影できる"""
-    session.use_transition({**DEFAULT_SETTINGS, "fade_to_black": False})
+    session.use_transition({**DEFAULT_SETTINGS, "dark_window": 0})
     session.studio(True)
     session.program("scene-a")
     session.send("SetCurrentPreviewScene", {"sceneName": "scene-b"})
@@ -382,7 +382,7 @@ def s2(check: Check, ref_a, ref_b) -> dict:
 
 def s3(check: Check, ref_a, ref_b) -> None:
     s = check.session
-    s.use_transition({**DEFAULT_SETTINGS, "fade_to_black": False})
+    s.use_transition({**DEFAULT_SETTINGS, "dark_window": 0})
     shots = s.tbar_shots("s3", [0.49, 0.51])
     check.expect(closer_to(shots[0], ref_a, ref_b) == "a", "0.49 is not a mosaic of scene-a")
     check.expect(closer_to(shots[1], ref_a, ref_b) == "b", "0.51 is not a mosaic of scene-b")
@@ -468,7 +468,7 @@ def plugin_errors() -> list[str]:
     return [line for line in text.splitlines() if PLUGIN_ERROR in line]
 
 
-S8_SETTINGS = {"fade_to_black": False, "max_cell_size": 128, "switch_point": 40}
+S8_SETTINGS = {"dark_window": 30, "max_cell_size": 128, "switch_point": 40}
 
 
 def command_run(session: Session) -> int:
