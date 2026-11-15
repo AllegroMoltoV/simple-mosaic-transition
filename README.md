@@ -58,6 +58,20 @@ Windows 版は OBS Studio 33 以降向けです。
 
 OBS Studio を終了し、`bin` や `data` と同じ階層に `plugins` フォルダーを作成してください。展開した製品フォルダーをコピーし、`plugins\simple-mosaic-transition\simple-mosaic-transition.dll` と `plugins\simple-mosaic-transition\data` を配置してから OBS Studio を起動します。
 
+### Verifying the download / ダウンロードの確認
+
+リリースの配布物には、このリポジトリの GitHub Actions でビルドされたことを示す来歴の証明 (GitHub Artifact Attestation) が付いています。[GitHub CLI](https://cli.github.com/) で、ダウンロードしたファイルを確かめられます。
+
+Every release file has a build provenance attestation that shows it was built by this repository's GitHub Actions. You can verify a downloaded file with the [GitHub CLI](https://cli.github.com/).
+
+```sh
+gh attestation verify simple-mosaic-transition-1.0.0-windows-x64.zip --repo AllegroMoltoV/simple-mosaic-transition
+```
+
+ファイルが改変されていたり、このリポジトリ以外でビルドされたものだったりすると、検証は失敗してエラーが表示されます。
+
+If the file was modified or was not built by this repository, the verification fails with an error.
+
 ### macOS / Linux
 
 macOS / Linux 向けのビルドは GitHub Actions で生成しています。GitHub Actions 上の Ubuntu 24.04 (Mesa の OpenGL) と macOS 15 (OpenGL) で、トランジションの描画を自動で検証しています。作者は macOS と Linux の実機を持たないため、実機の GPU と OBS Studio では動作を確認していません。macOS の OBS Studio 32 以降で選べる試験的な Metal 描画も確認していません。ソースからのビルドは「Build / ビルド」を参照してください。
@@ -99,6 +113,12 @@ The switch point is a share of the transition duration. At 50%, the previous sce
 - モザイクのマスの区切りは、画面の左上を起点にします。画面の右端と下端で欠けたマスは、欠けた大きさの中で平均します。
 - 音声は、OBS Studio 標準の「色へフェード」と同じく、切り替えの位置までに前のシーンの音を下げ、切り替えの位置から次のシーンの音を上げます。
 - トランジションの最後の瞬間は、OBS Studio が次のシーンをそのまま描きます。
+
+## Privacy / 通信とデータ
+
+このプラグインは通信しません。映像・音声・設定を外部へ送りません。読み込むファイルは、同梱のシェーダーと翻訳のファイルだけです。設定の値は、OBS Studio がシーンコレクションの一部として保存します。
+
+This plugin makes no network connections. It does not send video, audio, or settings anywhere. The only files it reads are its bundled shader and translation files. OBS Studio saves its settings as part of the scene collection.
 
 ## Build / ビルド
 
